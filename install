@@ -1,0 +1,91 @@
+#!/usr/bin/env bash
+# One-shot Ops Workstation installer.
+#   sudo ./install
+#   sudo bash ./install
+# Adapts to apt (Debian/Ubuntu) or pacman (Arch/Omarchy). Does not hardcode
+# distro paths: package names are probed, binary names are resolved, configs
+# land in the invoking user's XDG directories.
+set -euo pipefail
+
+_src="${BASH_SOURCE[0]}"
+if [[ "$_src" != /* ]]; then
+  _src="$(pwd)/${_src#./}"
+fi
+ROOT="$(cd "$(dirname "$(readlink -f "$_src")")" && pwd)"
+
+# shellcheck source=lib/packages.sh
+source "${ROOT}/lib/packages.sh"
+# shellcheck source=lib/snapshot.sh
+source "${ROOT}/lib/snapshot.sh"
+# shellcheck source=lib/configure.sh
+source "${ROOT}/lib/configure.sh"
+
+usage() {
+  cat <<'EOF'
+Uso: sudo ./install
+     sudo bash ./install
+
+  --plan            Mostrar qué haría, sin cambiar el sistema
+  --no-fish-shell   No cambiar el login shell a fish
+  -h, --help
+
+El usuario destino es quien invocó sudo (SUDO_USER). Forzá otro con OPS_USER.
+
+Rollback: sudo ./rollback
+EOF
+}
+
+need_root=1
+for arg in "$@"; do
+  case "$arg" in
+    --plan|-h|--help) need_root=0 ;;
+  esac
+done
+if [[ "$need_root" == 1 && "$(id -u)" -ne 0 ]]; then
+  exec sudo -- bash "${ROOT}/install" "$@"
+fi
+
+PLAN=0
+export OPS_SET_FISH="${OPS_SET_FISH:-1}"
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --plan) PLAN=1; shift ;;
+    --no-fish-shell) OPS_SET_FISH=0; shift ;;
+    -h|--help) usage; exit 0 ;;
+    *) die "Opción desconocida: $1" ;;
+  esac
+done
+
+ops_init
+detect_pm
+
+if [[ "$PLAN" == 1 ]]; then
+  if [[ "$(id -u)" -eq 0 ]]; then
+    pm_refresh
+  else
+    warn "Sin root no actualizo índices; el plan usa la caché local del gestor"
+  fi
+  print_plan
+  exit 0
+fi
+
+mkdir -p "$SNAPSHOTS_DIR" "$OPS_STATE" "$PREFIX_BIN" "$CONFIG_HOME"
+own "$OPS_DATA" "$OPS_STATE"
+
+log "${OS_PRETTY} · gestor ${PM} · usuario ${TARGET_USER} · prefix ${PREFIX_BIN}"
+create_snapshot
+install_all_tools
+deploy_configs
+maybe_set_fish_shell
+write_install_manifest
+
+cat <<EOF
+
+✓ Ops Workstation listo
+  Usuario:  ${TARGET_USER}
+  Snapshot: $(basename "$CURRENT_SNAPSHOT")
+  Rollback: sudo ${ROOT}/rollback
+  Consola:  ops
+
+Abrí una sesión nueva para entrar en fish.
+EOF

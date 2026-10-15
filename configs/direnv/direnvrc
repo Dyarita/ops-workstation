@@ -1,0 +1,6 @@
+# Ops Workstation — direnv + mise
+# En proyectos: echo 'use mise' > .envrc && direnv allow
+
+use_mise() {
+  direnv_load mise direnv env
+}

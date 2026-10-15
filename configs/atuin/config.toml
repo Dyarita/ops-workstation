@@ -1,0 +1,14 @@
+# Ops Workstation — Atuin
+auto_sync = false
+update_check = false
+style = "compact"
+search_mode = "fuzzy"
+filter_mode = "global"
+workspaces = true
+enter_accept = true
+show_preview = true
+show_help = true
+secrets_filter = true
+
+[sync]
+records = true

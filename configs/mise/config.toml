@@ -1,0 +1,7 @@
+# Ops Workstation — mise
+[settings]
+experimental = true
+idiomatic_version_file_enable_tools = ["node", "python", "go", "rust"]
+
+[tools]
+# Instalá runtimes por proyecto con: mise use node@lts

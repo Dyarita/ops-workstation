@@ -1,0 +1,64 @@
+# Ops Workstation — dense, high-signal prompt for advanced engineers
+format = """
+$directory$git_branch$git_status$git_metrics$python$nodejs$rust$golang$cmd_duration$line_break\
+$character"""
+
+add_newline = false
+
+[character]
+success_symbol = "[❯](bold green)"
+error_symbol = "[❯](bold red)"
+vicmd_symbol = "[❮](bold yellow)"
+
+[directory]
+truncation_length = 4
+truncate_to_repo = true
+style = "bold cyan"
+read_only = " 🔒"
+
+[git_branch]
+symbol = ""
+style = "bold purple"
+format = "[$symbol$branch]($style) "
+
+[git_status]
+format = '([\[$all_status$ahead_behind\]]($style) )'
+style = "bold red"
+conflicted = "="
+ahead = "⇡${count}"
+behind = "⇣${count}"
+diverged = "⇕"
+untracked = "?"
+stashed = "≡"
+modified = "!"
+staged = "+"
+renamed = "»"
+deleted = "✘"
+
+[git_metrics]
+disabled = false
+format = "([+$added]($added_style) )([-$deleted]($deleted_style) )"
+
+[cmd_duration]
+min_time = 500
+format = "[⏱ $duration]($style) "
+style = "bold yellow"
+
+[python]
+symbol = "py "
+format = '[${symbol}${pyenv_prefix}(${version} )(\($virtualenv\) )]($style)'
+
+[nodejs]
+symbol = "node "
+format = "[$symbol($version )]($style)"
+
+[rust]
+symbol = "rs "
+format = "[$symbol($version )]($style)"
+
+[golang]
+symbol = "go "
+format = "[$symbol($version )]($style)"
+
+[package]
+disabled = true

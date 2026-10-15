@@ -1,0 +1,6 @@
+*.deb
+*.tar.gz
+.DS_Store
+*.log
+.env
+.env.*

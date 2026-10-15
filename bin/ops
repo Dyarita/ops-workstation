@@ -1,0 +1,202 @@
+#!/usr/bin/env bash
+# Ops Workstation — coherent operations interface
+set -euo pipefail
+
+OPS_ROOT="${OPS_WORKSTATION_ROOT:-$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)}"
+OPS_DATA="${XDG_DATA_HOME:-$HOME/.local/share}/ops-workstation"
+
+have() { command -v "$1" >/dev/null 2>&1; }
+
+banner() {
+  if have gum; then
+    gum style --border rounded --border-foreground 42 --padding "0 2" --bold \
+      "OPS WORKSTATION" "SpaceX / xAI engineer console"
+  else
+    echo "=== OPS WORKSTATION ==="
+  fi
+}
+
+menu_main() {
+  if ! have gum; then
+    echo "Subcomandos: status | search | git | sys | files | tmux | doctor | install | rollback | help"
+    exit 0
+  fi
+  local choice
+  choice="$(gum choose \
+    "status — health check" \
+    "search — búsqueda universal" \
+    "git — lazygit" \
+    "sys — btop / dust / procs" \
+    "files — yazi" \
+    "tmux — sesión OPS" \
+    "doctor — diagnóstico" \
+    "install — re-ejecutar installer" \
+    "rollback — restaurar snapshot" \
+    "quit")"
+  case "$choice" in
+    status*) cmd_status ;;
+    search*) cmd_search ;;
+    git*) have lazygit && lazygit || echo "lazygit no instalado" ;;
+    sys*) cmd_sys ;;
+    files*) have yazi && yazi || echo "yazi no instalado" ;;
+    tmux*) cmd_tmux ;;
+    doctor*) cmd_doctor ;;
+    install*) "$OPS_ROOT/install" ;;
+    rollback*) cmd_rollback ;;
+    quit*|*) exit 0 ;;
+  esac
+}
+
+cmd_status() {
+  local tools=(fish starship zoxide fzf atuin rg fd bat eza btop tmux lazygit yazi mise direnv just gum jq yq shellcheck dust delta xh sg procs)
+  printf '%-12s %s\n' "TOOL" "STATUS"
+  printf '%-12s %s\n' "----" "------"
+  local t
+  for t in "${tools[@]}"; do
+    # ast-grep binary may be ast-grep or sg
+    if [[ "$t" == "sg" ]]; then
+      if have sg || have ast-grep; then printf '%-12s %s\n' "$t" "ok"; else printf '%-12s %s\n' "$t" "MISSING"; fi
+      continue
+    fi
+    if [[ "$t" == "rg" ]]; then
+      if have rg; then printf '%-12s %s\n' "$t" "ok"; else printf '%-12s %s\n' "$t" "MISSING"; fi
+      continue
+    fi
+    if have "$t"; then printf '%-12s %s\n' "$t" "ok"; else printf '%-12s %s\n' "$t" "MISSING"; fi
+  done
+  echo
+  if [[ -f "$OPS_DATA/last-snapshot" ]]; then
+    echo "Último snapshot: $(cat "$OPS_DATA/last-snapshot")"
+  else
+    echo "Sin snapshots aún"
+  fi
+  echo "Shell: $(getent passwd "$USER" | cut -d: -f7)"
+}
+
+cmd_search() {
+  if have gum && have fzf; then
+    local mode
+    mode="$(gum choose "files" "content" "dirs")"
+    case "$mode" in
+      files)
+        local f
+        f="$(fd --hidden --follow --exclude .git | fzf --preview 'bat --color=always --line-range=:200 {} 2>/dev/null || ls -la {}')"
+        [[ -n "${f:-}" ]] && ${EDITOR:-nvim} "$f"
+        ;;
+      content)
+        local q hit
+        q="$(gum input --placeholder 'patrón ripgrep')"
+        hit="$(rg --line-number --no-heading --color=always "$q" | fzf --ansi --delimiter : --preview 'bat --color=always {1} --highlight-line {2}' --preview-window 'up,60%,border-bottom,+{2}+3/3' || true)"
+        if [[ -n "${hit:-}" ]]; then
+          local file line
+          file="$(echo "$hit" | cut -d: -f1)"
+          line="$(echo "$hit" | cut -d: -f2)"
+          ${EDITOR:-nvim} "+$line" "$file"
+        fi
+        ;;
+      dirs)
+        local d
+        d="$(fd --type d --hidden --follow --exclude .git | fzf)"
+        [[ -n "${d:-}" ]] && echo "cd → $d" && cd "$d" && exec "${SHELL:-fish}"
+        ;;
+    esac
+  else
+    echo "Necesita gum + fzf. En fish: ops-search"
+  fi
+}
+
+cmd_sys() {
+  if have gum; then
+    local c
+    c="$(gum choose "btop" "dust" "procs")"
+    case "$c" in
+      btop) btop ;;
+      dust) dust -d 1 ;;
+      procs) procs ;;
+    esac
+  else
+    btop
+  fi
+}
+
+cmd_tmux() {
+  if ! have tmux; then echo "tmux no instalado"; return 1; fi
+  if tmux has-session -t OPS 2>/dev/null; then
+    tmux attach -t OPS
+  else
+    tmux new -s OPS
+  fi
+}
+
+cmd_doctor() {
+  cmd_status
+  echo
+  echo "PATH local: $HOME/.local/bin"
+  echo "Cargo: ${CARGO_HOME:-$HOME/.cargo}/bin"
+  echo "Ops root: $OPS_ROOT"
+  if have shellcheck; then
+    echo
+    echo "ShellCheck install/rollback:"
+    shellcheck -x "$OPS_ROOT/install" "$OPS_ROOT/rollback" 2>&1 | head -40 || true
+  fi
+}
+
+cmd_rollback() {
+  if have gum; then
+    local ids choice
+    ids="$("$OPS_ROOT/rollback" --list 2>/dev/null | awk '{print $1}')"
+    if [[ -z "$ids" ]]; then echo "Sin snapshots"; return 1; fi
+    choice="$(echo "$ids" | gum choose)"
+    gum confirm "¿Rollback a $choice?" && "$OPS_ROOT/rollback" "$choice"
+  else
+    "$OPS_ROOT/rollback"
+  fi
+}
+
+cmd_help() {
+  cat <<'EOF'
+ops — interfaz de operaciones
+
+  ops              menú interactivo (gum)
+  ops status       health check de herramientas
+  ops search       búsqueda universal (fzf+fd+rg)
+  ops git          lazygit
+  ops sys          btop / dust / procs
+  ops files        yazi
+  ops tmux         sesión tmux OPS
+  ops doctor       diagnóstico
+  ops install      ./install
+  ops rollback     ./rollback
+  ops help
+
+Fish:
+  ops-search [files|content|dirs]
+  yy                 yazi + cd
+  z <query>          zoxide
+EOF
+}
+
+main() {
+  local cmd="${1:-}"
+  shift || true
+  case "$cmd" in
+    "") banner; menu_main ;;
+    status) cmd_status ;;
+    search) cmd_search ;;
+    git)
+      if have lazygit; then lazygit; else die_msg "lazygit missing"; fi
+      ;;
+    sys) cmd_sys ;;
+    files) have yazi && yazi ;;
+    tmux) cmd_tmux ;;
+    doctor) cmd_doctor ;;
+    install) "$OPS_ROOT/install" "$@" ;;
+    rollback) "$OPS_ROOT/rollback" "$@" ;;
+    help|-h|--help) cmd_help ;;
+    *) cmd_help; exit 1 ;;
+  esac
+}
+
+die_msg() { echo "$*" >&2; exit 1; }
+
+main "$@"
