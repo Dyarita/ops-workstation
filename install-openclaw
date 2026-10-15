@@ -88,17 +88,65 @@ as_user() {
 }
 
 user_shell() {
-  as_user bash -lc "$1"
+  # Shells on a fresh VM do not agree on PATH. Always search the places
+  # the upstream installer and this pin actually use.
+  as_user bash -lc "export PATH=\"/usr/local/bin:${TARGET_HOME}/.local/bin:${TARGET_HOME}/.openclaw/tools/node/bin:${TARGET_HOME}/.npm-global/bin:\$PATH\"; $1"
 }
 
 log "OpenClaw · ${MODE} · usuario ${TARGET_USER} · ${OS_PRETTY} · ${PM}"
 
 install_cli() {
-  log "Instalando CLI (instalador upstream, sin preguntas)"
+  log "Instalando CLI con el instalador shell de OpenClaw (no npm a mano)"
   if user_shell 'curl -fsSL --proto "=https" --tlsv1.2 https://openclaw.ai/install.sh | bash -s -- --no-onboard --no-prompt'; then
     ok "CLI instalada"
   else
-    note_failure openclaw "el instalador upstream falló; el resto sigue"
+    note_failure openclaw "el instalador upstream falló; igual busco el binario"
+    return 1
+  fi
+}
+
+# The shell installer may leave openclaw in ~/.local/bin, an npm prefix, or
+# under ~/.openclaw. One wrapper on the default PATH hides that.
+pin_openclaw() {
+  local candidate="" c resolved npm_root
+  local -a candidates=(
+    "${TARGET_HOME}/.local/bin/openclaw"
+    "${TARGET_HOME}/.npm-global/bin/openclaw"
+    "${TARGET_HOME}/.openclaw/bin/openclaw"
+  )
+  npm_root="$(user_shell 'npm root -g 2>/dev/null' || true)"
+  npm_root="${npm_root//$'\n'/}"
+  if [[ -n "$npm_root" ]]; then
+    candidates+=("${npm_root}/openclaw/openclaw.mjs")
+  fi
+  for c in "${candidates[@]}"; do
+    [[ -e "$c" || -L "$c" ]] || continue
+    if [[ -f "$c" ]] && grep -q 'ops-workstation openclaw pin' "$c" 2>/dev/null; then
+      continue
+    fi
+    resolved="$(readlink -f "$c" 2>/dev/null || true)"
+    [[ -n "$resolved" && -e "$resolved" ]] || continue
+    candidate="$resolved"
+    break
+  done
+  if [[ -z "$candidate" ]]; then
+    note_failure path "no encontré el binario de openclaw para fijarlo"
+    return 1
+  fi
+  mkdir -p /usr/local/bin "${TARGET_HOME}/.local/bin"
+  cat > /usr/local/bin/openclaw <<EOF
+#!/bin/sh
+# ops-workstation openclaw pin
+export PATH="${TARGET_HOME}/.openclaw/tools/node/bin:${TARGET_HOME}/.local/bin:${TARGET_HOME}/.npm-global/bin:\$PATH"
+exec $(printf '%q' "$candidate") "\$@"
+EOF
+  chmod 755 /usr/local/bin/openclaw
+  ln -sfn /usr/local/bin/openclaw "${TARGET_HOME}/.local/bin/openclaw"
+  own "${TARGET_HOME}/.local/bin/openclaw" || true
+  if user_shell 'openclaw --version'; then
+    ok "openclaw fijo en /usr/local/bin/openclaw → ${candidate}"
+  else
+    note_failure path "el enlace está, pero openclaw --version falló"
     return 1
   fi
 }
@@ -136,6 +184,7 @@ write_task() {
 }
 
 install_cli || true
+pin_openclaw || true
 setup_gateway
 write_task
 

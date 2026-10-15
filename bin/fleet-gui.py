@@ -230,7 +230,7 @@ class Handler(BaseHTTPRequestHandler):
         encoded = base64.b64encode(message.encode()).decode()
         script = (
             "set -euo pipefail\n"
-            "export PATH=\"$HOME/.local/bin:$HOME/.npm-global/bin:$HOME/.openclaw/bin:/usr/local/bin:$PATH\"\n"
+            "export PATH=\"/usr/local/bin:$HOME/.local/bin:$HOME/.openclaw/tools/node/bin:$HOME/.npm-global/bin:$PATH\"\n"
             "mkdir -p \"$HOME/.openclaw/workspace\"\n"
             f"printf '%s' '{encoded}' | base64 -d > \"$HOME/.openclaw/workspace/BRIEF.md\"\n"
             "openclaw agent --agent main --message-file \"$HOME/.openclaw/workspace/BRIEF.md\" --timeout 600\n"
