@@ -1,0 +1,234 @@
+#!/usr/bin/env python3
+"""Switch libvirt VM consoles from one small window. Host only."""
+import os
+import subprocess
+import time
+from pathlib import Path
+
+import tkinter as tk
+from tkinter import font as tkfont
+
+CONNECT = "qemu:///system"
+EVENT_LOG = Path.home() / ".local" / "state" / "ops-workstation" / "vm-events.log"
+
+
+def run(args, timeout=8):
+    try:
+        done = subprocess.run(args, text=True, capture_output=True, timeout=timeout)
+        return done.returncode, (done.stdout or "") + (done.stderr or "")
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return 1, str(exc)
+
+
+def domains():
+    code, out = run(["virsh", "-c", CONNECT, "list", "--all", "--name"])
+    if code != 0:
+        return []
+    return [line.strip() for line in out.splitlines() if line.strip()]
+
+
+def domstate(name):
+    code, out = run(["virsh", "-c", CONNECT, "domstate", name])
+    return out.strip() if code == 0 else "unknown"
+
+
+def domip(name):
+    code, out = run(["virsh", "-c", CONNECT, "domifaddr", name])
+    if code != 0:
+        return ""
+    for line in out.splitlines():
+        parts = line.split()
+        if len(parts) >= 4 and parts[2] == "ipv4":
+            return parts[3].split("/")[0]
+    return ""
+
+
+def journal_for(name):
+    code, out = run(
+        ["journalctl", "-n", "120", "-o", "short-iso", "--no-pager", "-u", "libvirtd"],
+        timeout=6,
+    )
+    if code != 0 or not out.strip():
+        return "libvirt no dejó líneas legibles."
+    needle = name.lower()
+    lines = [line for line in out.splitlines() if needle in line.lower()]
+    if not lines:
+        return "Sin líneas recientes de libvirt para esta VM."
+    return "\n".join(lines[-8:])
+
+
+def remember(text):
+    EVENT_LOG.parent.mkdir(parents=True, exist_ok=True)
+    stamp = time.strftime("%H:%M:%S")
+    line = f"{stamp}  {text}\n"
+    with EVENT_LOG.open("a", encoding="utf-8") as handle:
+        handle.write(line)
+    return line
+
+
+class Switcher:
+    def __init__(self):
+        self.root = tk.Tk()
+        self.root.title("VMs")
+        self.root.configure(bg="#0b1220")
+        self.root.attributes("-topmost", True)
+        self.root.geometry("520x460+40+40")
+        self.names = []
+        self.index = 0
+        self.prev = {}
+        self.viewers = {}
+        self.buttons = []
+        title = tkfont.Font(family="sans-serif", size=13, weight="bold")
+        small = tkfont.Font(family="sans-serif", size=10)
+        mono = tkfont.Font(family="monospace", size=9)
+        tk.Label(
+            self.root,
+            text="Click o 1 2 3 · ← → rotan · Enter entra",
+            fg="#8b9bb4",
+            bg="#0b1220",
+            font=small,
+        ).pack(anchor="w", padx=12, pady=(10, 4))
+        self.list_box = tk.Frame(self.root, bg="#0b1220")
+        self.list_box.pack(fill="x", padx=10)
+        self.detail = tk.Label(
+            self.root, text="", fg="#e7ecf3", bg="#0b1220", font=title, anchor="w", justify="left"
+        )
+        self.detail.pack(fill="x", padx=12, pady=(8, 4))
+        self.log = tk.Text(
+            self.root, height=14, bg="#101826", fg="#d5deea", font=mono,
+            relief="flat", wrap="word", insertbackground="#d5deea",
+        )
+        self.log.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+        self.log.configure(state="disabled")
+        self.root.bind("<Left>", lambda _e: self.rotate(-1))
+        self.root.bind("<Right>", lambda _e: self.rotate(1))
+        self.root.bind("<Up>", lambda _e: self.rotate(-1))
+        self.root.bind("<Down>", lambda _e: self.rotate(1))
+        self.root.bind("<Return>", lambda _e: self.open_current())
+        self.root.bind("<space>", lambda _e: self.open_current())
+        self.root.bind("q", lambda _e: self.root.destroy())
+        for number in range(1, 10):
+            self.root.bind(str(number), lambda _e, n=number: self.jump(n - 1))
+        self.write("Panel listo. Las VMs salen de libvirt, no hay que registrarlas.")
+        self.refresh()
+
+    def write(self, text):
+        line = remember(text)
+        self.log.configure(state="normal")
+        self.log.insert("end", line)
+        self.log.see("end")
+        self.log.configure(state="disabled")
+
+    def refresh(self):
+        names = domains()
+        if names != self.names:
+            self.names = names
+            if self.index >= len(self.names):
+                self.index = 0
+            self.rebuild()
+        for name in self.names:
+            state = domstate(name)
+            previous = self.prev.get(name)
+            if previous and previous != state:
+                ip = domip(name)
+                extra = f" · {ip}" if ip else ""
+                self.write(f"{name}: {previous} → {state}{extra}")
+            self.prev[name] = state
+        self.paint()
+        self.root.after(2000, self.refresh)
+
+    def rebuild(self):
+        for child in self.list_box.winfo_children():
+            child.destroy()
+        self.buttons = []
+        for pos, name in enumerate(self.names):
+            button = tk.Button(
+                self.list_box,
+                text=name,
+                anchor="w",
+                command=lambda n=pos: self.jump(n, open_console=True),
+                relief="flat",
+                padx=10,
+                pady=8,
+            )
+            button.pack(fill="x", pady=2)
+            self.buttons.append(button)
+
+    def paint(self):
+        if not self.names:
+            self.detail.configure(text="No hay VMs en libvirt.")
+            return
+        name = self.names[self.index]
+        state = self.prev.get(name) or domstate(name)
+        ip = domip(name) or "sin IP"
+        viewer = self.viewers.get(name)
+        screen = "pantalla abierta" if viewer and viewer.poll() is None else "pantalla cerrada"
+        self.detail.configure(text=f"{name}   {state}   {ip}   {screen}")
+        for pos, button in enumerate(self.buttons):
+            vm = self.names[pos]
+            st = self.prev.get(vm, "")
+            ip = domip(vm) or "—"
+            mark = "●" if pos == self.index else "○"
+            button.configure(
+                text=f" {pos + 1}  {mark}  {vm}    {st}    {ip}",
+                bg="#16324f" if pos == self.index else "#121a2b",
+                fg="#e7ecf3",
+                activebackground="#1d4e89",
+                activeforeground="#ffffff",
+            )
+
+    def jump(self, pos, open_console=True):
+        if not self.names:
+            return
+        self.index = pos % len(self.names)
+        self.paint()
+        if open_console:
+            self.open_current()
+
+    def rotate(self, step):
+        if not self.names:
+            return
+        self.jump(self.index + step, open_console=True)
+
+    def open_current(self):
+        if not self.names:
+            return
+        name = self.names[self.index]
+        state = domstate(name)
+        if state == "shut off":
+            self.write(f"{name}: estaba apagada, la enciendo")
+            code, out = run(["virsh", "-c", CONNECT, "start", name], timeout=20)
+            if code != 0:
+                self.write(f"{name}: no arrancó\n{out.strip()}")
+                return
+        current = self.viewers.get(name)
+        if current and current.poll() is None:
+            self.write(f"{name}: la pantalla ya está abierta")
+            self.focus(name)
+            self.show_journal(name)
+            return
+        self.write(f"{name}: abro la pantalla ({domip(name) or 'todavía sin IP'})")
+        self.viewers[name] = subprocess.Popen(
+            ["virt-viewer", "--connect", CONNECT, "--attach", "--wait", name],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        self.root.after(400, lambda: self.focus(name))
+        self.show_journal(name)
+
+    def focus(self, name):
+        if os.environ.get("DISPLAY"):
+            run(["wmctrl", "-a", name], timeout=2)
+
+    def show_journal(self, name):
+        self.write(journal_for(name))
+
+    def run(self):
+        self.root.mainloop()
+
+
+if __name__ == "__main__":
+    if not os.environ.get("DISPLAY") and not os.environ.get("WAYLAND_DISPLAY"):
+        print("No hay pantalla. Desde el host gráfico: vmwatch")
+        raise SystemExit(1)
+    Switcher().run()

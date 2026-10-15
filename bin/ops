@@ -172,6 +172,10 @@ cmd_failures() {
   done <"$file"
 }
 
+cmd_vmwatch() {
+  exec "$OPS_ROOT/bin/vmwatch"
+}
+
 cmd_fleet() {
   if ! have python3; then
     echo "Falta python3. En esta máquina: sudo apt install python3  o  sudo pacman -S python"
@@ -203,6 +207,7 @@ ops — interfaz de operaciones
   ops repair       reintenta lo que falta, buscando upstreams de nuevo
   ops failures     lista los pendientes del último install
   ops fleet        panel del host: manda instrucciones a las VMs
+  ops vmwatch      rotar las pantallas de las VMs
   ops rollback     ./rollback
   ops help
 
@@ -231,6 +236,7 @@ main() {
     repair) cmd_repair ;;
     failures) cmd_failures ;;
     fleet) cmd_fleet ;;
+    vmwatch|vms) cmd_vmwatch ;;
     rollback) "$OPS_ROOT/rollback" "$@" ;;
     help|-h|--help) cmd_help ;;
     *) cmd_help; exit 1 ;;

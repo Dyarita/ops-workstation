@@ -48,7 +48,10 @@ ops fleet
 vmlist
 vmip Bry
 vmssh Bry
+vmwatch
 ```
+
+`vmwatch` es la ventana para rotar. Click en la VM, o las teclas `1` `2` y las flechas. Enter abre la pantalla. El registro de abajo anota cada cambio de estado y lo que hace libvirt.
 
 También `vmup`, `vmdown`, `vmreboot` y `vminfo`. Si hay una sola VM encendida, `vmssh` y `vmip` la eligen solas.
 

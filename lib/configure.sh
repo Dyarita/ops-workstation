@@ -70,6 +70,7 @@ EOF
   for alias_name in vmlist vmip vmssh vmup vmdown vmreboot vminfo; do
     ln -sfn vm "${TARGET_HOME}/.local/bin/${alias_name}"
   done
+  ln -sfn "${OPS_ROOT}/bin/vmwatch" "${TARGET_HOME}/.local/bin/vmwatch"
   chmod +x "${OPS_ROOT}/bin/ops" "${OPS_ROOT}/install" "${OPS_ROOT}/rollback" "${OPS_ROOT}/rollback.sh"
 
   if [[ "${NEED_USER_PATH}" == "1" ]]; then
