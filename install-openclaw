@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
-# OpenClaw on this machine, without a desktop on every VM.
+# OpenClaw on a VM. The host does not run this.
 #   sudo ./install-openclaw --headless --task web
-#   sudo ./install-openclaw --gui
-# A headless VM gets the gateway and a task file. The GUI stays on the operator.
+# From the host, send work with: ops fleet
 set -euo pipefail
 
 _src="${BASH_SOURCE[0]}"
@@ -18,25 +17,17 @@ source "${ROOT}/lib/platform.sh"
 
 usage() {
   cat <<'EOF'
-Uso: sudo ./install-openclaw [--headless|--gui] [--task web|markets|prices|social]
+Uso: sudo ./install-openclaw --headless --task web|markets|prices|social
 
-  --headless   VM de trabajo: gateway, sin escritorio
-  --gui        Esta máquina abre el panel (app + flota)
-  --task NAME  Qué hace esta VM. En --gui se ignora
-  --no-open    Instala pero no abre la interfaz
-  -h, --help
-
-Sin flags: --gui si hay DISPLAY, si no --headless.
-
-La GUI no va en cada VM. Desde la workstation:
-  ops fleet
+Corré esto en la VM, no en el host. El host no instala OpenClaw.
+Desde el host se mandan instrucciones con: ops fleet
 EOF
 }
 
 need_root=1
 for arg in "$@"; do
   case "$arg" in
-    -h|--help) need_root=0 ;;
+    -h|--help|--gui) need_root=0 ;;
   esac
 done
 if [[ "$need_root" == 1 && "$(id -u)" -ne 0 ]]; then
@@ -44,15 +35,23 @@ if [[ "$need_root" == 1 && "$(id -u)" -ne 0 ]]; then
     bash "${ROOT}/install-openclaw" "$@"
 fi
 
-MODE="auto"
+MODE="worker"
 TASK=""
-OPEN_UI=1
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --headless) MODE="worker"; shift ;;
-    --gui) MODE="operator"; shift ;;
+    --gui)
+      cat <<'EOF'
+En el host no se instala OpenClaw.
+Abrí el panel y mandá la instrucción a la VM:
+
+  ops fleet
+
+EOF
+      exit 0
+      ;;
     --task) TASK="${2:-}"; shift 2 ;;
-    --no-open) OPEN_UI=0; shift ;;
+    --no-open) shift ;;
     -h|--help) usage; exit 0 ;;
     *) die "Opción desconocida: $1" ;;
   esac
@@ -66,14 +65,6 @@ note_failure() {
   FAILURES+=("$1	$2")
   warn "$1: $2"
 }
-
-if [[ "$MODE" == "auto" ]]; then
-  if [[ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]]; then
-    MODE="operator"
-  else
-    MODE="worker"
-  fi
-fi
 
 case "$TASK" in
   ""|web|markets|prices|social) ;;
@@ -144,60 +135,9 @@ write_task() {
   ok "Tarea ${TASK} en ${dest}/TASK.md"
 }
 
-install_gui_app() {
-  [[ "$MODE" == "operator" ]] || return 0
-  local url tmp json
-  case "$MACH" in
-    x86_64) asset_re='OpenClaw-.+-amd64\.AppImage$' ;;
-    aarch64) asset_re='OpenClaw-.+-arm64\.AppImage$' ;;
-    *) note_failure gui "sin AppImage para ${MACH}; uso el Control UI en el browser"; return 0 ;;
-  esac
-  json="$(curl -fsSL --retry 3 -H "Accept: application/vnd.github+json" \
-    https://api.github.com/repos/openclaw/openclaw/releases/latest)" || {
-    note_failure gui "no pude leer el release de la app"
-    return 0
-  }
-  if have_cmd jq; then
-    url="$(printf '%s\n' "$json" | jq -r --arg re "$asset_re" 'first(.assets[].browser_download_url | select(test($re))) // empty')"
-  else
-    url="$(printf '%s\n' "$json" | grep -oE 'https://[^"]+AppImage' | grep -E "$asset_re" | head -1 || true)"
-  fi
-  if [[ -z "$url" ]]; then
-    note_failure gui "este release no trae AppImage para ${MACH}; el panel web igual abre"
-    return 0
-  fi
-  log "App ← ${url}"
-  tmp="$(mktemp)"
-  if curl -fsSL --retry 3 -o "$tmp" "$url"; then
-    install -m 0755 "$tmp" "${PREFIX_BIN}/openclaw-gui"
-    rm -f "$tmp"
-    ok "App en ${PREFIX_BIN}/openclaw-gui"
-  else
-    rm -f "$tmp"
-    note_failure gui "descarga de la AppImage falló"
-  fi
-}
-
-open_operator_ui() {
-  [[ "$MODE" == "operator" && "$OPEN_UI" == 1 ]] || return 0
-  local uid runtime
-  uid="$(id -u "$TARGET_USER")"
-  runtime="${XDG_RUNTIME_DIR:-/run/user/${uid}}"
-  if [[ -x "${PREFIX_BIN}/openclaw-gui" && -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]]; then
-    as_user env DISPLAY="${DISPLAY:-}" WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-}" XDG_RUNTIME_DIR="$runtime" \
-      "${PREFIX_BIN}/openclaw-gui" --appimage-extract-and-run >/tmp/openclaw-gui.log 2>&1 &
-    ok "App OpenClaw abierta"
-  fi
-  as_user env DISPLAY="${DISPLAY:-}" WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-}" XDG_RUNTIME_DIR="$runtime" \
-    python3 "${ROOT}/bin/fleet-gui.py" --open >/tmp/ops-fleet.log 2>&1 &
-  ok "Panel de flota en http://127.0.0.1:8765"
-}
-
 install_cli || true
 setup_gateway
 write_task
-install_gui_app
-open_operator_ui
 
 printf '\n'
 if [[ "${#FAILURES[@]}" -eq 0 ]]; then
@@ -208,16 +148,8 @@ else
     printf '  %s\n' "$row"
   done
 fi
-if [[ "$MODE" == "worker" ]]; then
-  cat <<EOF
+cat <<EOF
 
-VM worker, tarea ${TASK}. No hay escritorio acá a propósito.
-Desde la workstation: ops fleet
+VM lista, tarea ${TASK}. OpenClaw corre acá, no en el host.
+Desde el host: ops fleet
 EOF
-else
-  cat <<EOF
-
-Panel: http://127.0.0.1:8765
-Ahí se agregan las VMs, se les asigna la tarea y se abre el gateway de cada una.
-EOF
-fi

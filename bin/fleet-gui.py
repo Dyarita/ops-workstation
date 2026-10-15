@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Local fleet panel. Listens on 127.0.0.1 only."""
+import base64
 import html
 import os
 import shutil
@@ -56,7 +57,7 @@ def page(body, title="Flota"):
   pre {{ white-space: pre-wrap; background: #101826; padding: .8rem; border-radius: 8px; }}
 </style>
 <h1>Flota OpenClaw</h1>
-<p class="muted">Cada VM hace una tarea. Este panel las instala y abre su gateway. La GUI no vive dentro de la VM.</p>
+<p class="muted">OpenClaw no corre en este equipo. Este panel le manda la instrucción por SSH a la VM que sí lo tiene.</p>
 {body}
 """
 
@@ -100,6 +101,8 @@ class Handler(BaseHTTPRequestHandler):
             self.apply(form)
         elif path == "/open":
             self.open_vm(form)
+        elif path == "/instruct":
+            self.instruct(form)
         else:
             self.send_html(404, page("<p>No está.</p>"))
 
@@ -133,9 +136,19 @@ class Handler(BaseHTTPRequestHandler):
             "<input name=ssh placeholder=user@ip required size=28> "
             f"<select name=task>{options}</select> "
             "<button>Agregar</button></p></form>"
-            "<p class=muted>Instalar clona el repo en la VM y corre "
-            "<code>sudo ./install-openclaw --headless --task …</code>. "
-            "Hace falta SSH con llave, sin password.</p>"
+            "<p class=muted>Instalar entra por SSH, clona el repo en la VM y corre "
+            "<code>sudo ./install-openclaw --headless --task …</code> allá. "
+            "Hace falta llave SSH, y sudo sin contraseña solo para ese botón.</p>"
+            "<h2>Mandar instrucción</h2>"
+            "<form method=post action=/instruct>"
+            "<p><select name=name>"
+            + "".join(f"<option>{html.escape(row['name'])}</option>" for row in rows)
+            + "</select></p>"
+            "<p><textarea name=message required rows=6 style='width:100%' "
+            "placeholder='Qué tiene que hacer esta VM'></textarea></p>"
+            "<p><button>Enviar a la VM</button></p></form>"
+            "<p class=muted>Eso ejecuta <code>openclaw agent</code> dentro de la VM. "
+            "Acá no se instala OpenClaw.</p>"
         )
         return "\n".join(body)
 
@@ -204,6 +217,30 @@ class Handler(BaseHTTPRequestHandler):
             200,
             page(
                 f"<h2>{html.escape(name)}</h2><p>exit {code}</p><pre>{html.escape(out[-8000:])}</pre><p><a href=/>Volver</a></p>"
+            ),
+        )
+
+    def instruct(self, form):
+        name = (form.get("name") or [""])[0].strip()
+        message = (form.get("message") or [""])[0].strip()
+        row = next((item for item in load_rows() if item["name"] == name), None)
+        if row is None or not message:
+            self.send_html(400, page("<p>Elegí una VM y escribí la instrucción.</p><p><a href=/>Volver</a></p>"))
+            return
+        encoded = base64.b64encode(message.encode()).decode()
+        script = (
+            "set -euo pipefail\n"
+            "export PATH=\"$HOME/.local/bin:$HOME/.npm-global/bin:$HOME/.openclaw/bin:/usr/local/bin:$PATH\"\n"
+            "mkdir -p \"$HOME/.openclaw/workspace\"\n"
+            f"printf '%s' '{encoded}' | base64 -d > \"$HOME/.openclaw/workspace/BRIEF.md\"\n"
+            "openclaw agent --agent main --message-file \"$HOME/.openclaw/workspace/BRIEF.md\" --timeout 600\n"
+        )
+        code, out = shell(["ssh", "-o", "BatchMode=yes", row["ssh"], "bash -s"], timeout=620, stdin=script)
+        self.send_html(
+            200,
+            page(
+                f"<h2>{html.escape(name)}</h2><p>La instrucción corrió en la VM. exit {code}</p>"
+                f"<pre>{html.escape(out[-12000:])}</pre><p><a href=/>Volver</a></p>"
             ),
         )
 

@@ -202,7 +202,7 @@ ops — interfaz de operaciones
   ops install      ./install
   ops repair       reintenta lo que falta, buscando upstreams de nuevo
   ops failures     lista los pendientes del último install
-  ops fleet        panel para dirigir las VMs headless
+  ops fleet        panel del host: manda instrucciones a las VMs
   ops rollback     ./rollback
   ops help
 

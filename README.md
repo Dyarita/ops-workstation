@@ -39,17 +39,17 @@ Otro usuario: `sudo OPS_USER=nombre ./install`.
 
 ## OpenClaw y las VMs
 
-La app no se instala dentro de cada VM. Una VM headless solo corre el gateway y una tarea. El panel vive en la workstation y desde ahí se manda el trabajo.
+OpenClaw no se instala en el host. El host solo abre un panel y, por SSH, le manda la instrucción a la VM. La VM es la que corre el gateway.
 
-En la workstation (hay pantalla):
+En el host:
 
 ```bash
-sudo ./install-openclaw --gui
+ops fleet
 ```
 
-Eso abre la app de OpenClaw y el panel en http://127.0.0.1:8765.
+Eso abre http://127.0.0.1:8765. Ahí agregás la VM, apretás Instalar una vez, y después escribís la instrucción y la enviás. El comando `openclaw agent` corre dentro de la VM.
 
-En cada VM, un solo comando (también lo dispara el botón Instalar del panel):
+En la VM, el botón Instalar hace esto:
 
 ```bash
 sudo ./install-openclaw --headless --task web
@@ -57,7 +57,7 @@ sudo ./install-openclaw --headless --task web
 
 Tareas: `web`, `markets`, `prices`, `social`. La de red social deja los posteos en una cola; no publica sola.
 
-El panel guarda las VMs en `~/.config/ops-workstation/fleet.tsv`. SSH tiene que entrar con llave, y el usuario de la VM necesita `sudo -n` para el botón Instalar.
+Hace falta SSH con llave. Para Instalar, el usuario de la VM tiene que poder usar `sudo` sin contraseña. Mandar una instrucción no usa sudo.
 
 ## Rollback
 
