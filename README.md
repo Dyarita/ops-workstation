@@ -28,6 +28,13 @@ Ver el plan sin tocar el sistema:
 ./install --plan
 ```
 
+Si una herramienta falla, el instalador sigue con el resto. Al final lista los pendientes. Para volver a buscar el paquete y el release upstream de lo que faltó:
+
+```bash
+sudo ./install --repair
+ops failures
+```
+
 Otro usuario: `sudo OPS_USER=nombre ./install`.
 
 ## Rollback

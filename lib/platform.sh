@@ -30,8 +30,8 @@ detect_pm() {
 pm_refresh() {
   log "Actualizando índices de paquetes ($PM)"
   case "$PM" in
-    apt) apt-get update -y ;;
-    pacman) pacman -Sy --noconfirm ;;
+    apt) apt-get update -y || return 1 ;;
+    pacman) pacman -Sy --noconfirm || return 1 ;;
     *) die "Gestor no soportado: $PM" ;;
   esac
 }
@@ -65,10 +65,10 @@ pm_install() {
   log "Instalando vía $PM: ${pkgs[*]}"
   case "$PM" in
     apt)
-      DEBIAN_FRONTEND=noninteractive apt-get install -y "${pkgs[@]}"
+      DEBIAN_FRONTEND=noninteractive apt-get install -y "${pkgs[@]}" || return 1
       ;;
     pacman)
-      pacman -S --needed --noconfirm "${pkgs[@]}"
+      pacman -S --needed --noconfirm "${pkgs[@]}" || return 1
       ;;
     *) die "Gestor no soportado: $PM" ;;
   esac

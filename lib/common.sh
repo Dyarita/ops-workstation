@@ -46,6 +46,7 @@ resolve_identity() {
   OPS_STATE="${STATE_HOME}/ops-workstation"
   SNAPSHOTS_DIR="${OPS_DATA}/snapshots"
   MANIFEST_CURRENT="${OPS_DATA}/current-manifest.json"
+  FAILURES_FILE="${OPS_DATA}/failures.tsv"
 
   TRACKED_PATHS=(
     "${CONFIG_HOME}/fish"

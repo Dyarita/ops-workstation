@@ -26,8 +26,13 @@ Uso: sudo ./install
      sudo bash ./install
 
   --plan            Mostrar qué haría, sin cambiar el sistema
+  --repair          Reintentar solo lo que sigue faltando
   --no-fish-shell   No cambiar el login shell a fish
   -h, --help
+
+Un fallo de una herramienta no corta el resto. Al final queda la lista
+de pendientes en ~/.local/share/ops-workstation/failures.tsv
+Reintento: sudo ./install --repair
 
 El usuario destino es quien invocó sudo (SUDO_USER). Forzá otro con OPS_USER.
 
@@ -46,10 +51,12 @@ if [[ "$need_root" == 1 && "$(id -u)" -ne 0 ]]; then
 fi
 
 PLAN=0
+REPAIR=0
 export OPS_SET_FISH="${OPS_SET_FISH:-1}"
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --plan) PLAN=1; shift ;;
+    --repair) REPAIR=1; shift ;;
     --no-fish-shell) OPS_SET_FISH=0; shift ;;
     -h|--help) usage; exit 0 ;;
     *) die "Opción desconocida: $1" ;;
@@ -72,20 +79,24 @@ fi
 mkdir -p "$SNAPSHOTS_DIR" "$OPS_STATE" "$PREFIX_BIN" "$CONFIG_HOME"
 own "$OPS_DATA" "$OPS_STATE"
 
+if [[ "$REPAIR" == 1 ]]; then
+  log "Repair: reinstalo solo lo que no está en PATH y vuelvo a buscar upstreams"
+fi
 log "${OS_PRETTY} · gestor ${PM} · usuario ${TARGET_USER} · prefix ${PREFIX_BIN}"
 create_snapshot
 install_all_tools
 deploy_configs
 maybe_set_fish_shell
 write_install_manifest
+print_failure_report
 
 cat <<EOF
 
-✓ Ops Workstation listo
-  Usuario:  ${TARGET_USER}
-  Snapshot: $(basename "$CURRENT_SNAPSHOT")
-  Rollback: sudo ${ROOT}/rollback
-  Consola:  ops
+Usuario:  ${TARGET_USER}
+Snapshot: $(basename "$CURRENT_SNAPSHOT")
+Rollback: sudo ${ROOT}/rollback
+Consola:  ops
+Pendientes: ${FAILURES_FILE}
 
 Abrí una sesión nueva para entrar en fish.
 EOF

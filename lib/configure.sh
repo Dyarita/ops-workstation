@@ -103,7 +103,8 @@ maybe_set_fish_shell() {
   local fish_path now
   fish_path="$(command -v fish || true)"
   if [[ -z "$fish_path" ]]; then
-    die "fish no quedó instalado"
+    note_failure fish "no quedó instalado; el login shell no cambió"
+    return 0
   fi
   if ! grep -qxF "$fish_path" /etc/shells 2>/dev/null; then
     printf '%s\n' "$fish_path" >>/etc/shells
@@ -115,7 +116,8 @@ maybe_set_fish_shell() {
   fi
   if [[ "${OPS_SET_FISH:-1}" == "1" ]]; then
     log "Login shell de ${TARGET_USER} → ${fish_path}"
-    chsh -s "$fish_path" "$TARGET_USER" || die "chsh falló. Manual: chsh -s ${fish_path} ${TARGET_USER}"
+    chsh -s "$fish_path" "$TARGET_USER" \
+      || note_failure fish "chsh falló. Manual: chsh -s ${fish_path} ${TARGET_USER}"
   else
     warn "Login shell no cambiado (--no-fish-shell)"
   fi

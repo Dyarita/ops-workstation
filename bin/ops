@@ -31,6 +31,8 @@ menu_main() {
     "tmux — sesión OPS" \
     "doctor — diagnóstico" \
     "install — re-ejecutar installer" \
+    "repair — reintentar lo que falló" \
+    "failures — ver pendientes" \
     "rollback — restaurar snapshot" \
     "quit")"
   case "$choice" in
@@ -42,6 +44,8 @@ menu_main() {
     tmux*) cmd_tmux ;;
     doctor*) cmd_doctor ;;
     install*) "$OPS_ROOT/install" ;;
+    repair*) cmd_repair ;;
+    failures*) cmd_failures ;;
     rollback*) cmd_rollback ;;
     quit*|*) exit 0 ;;
   esac
@@ -153,6 +157,26 @@ cmd_rollback() {
   fi
 }
 
+cmd_failures() {
+  local file="${XDG_DATA_HOME:-$HOME/.local/share}/ops-workstation/failures.tsv"
+  if [[ ! -s "$file" ]]; then
+    echo "Sin pendientes."
+    return 0
+  fi
+  printf '%-12s  %s\n' "TOOL" "ERROR"
+  while IFS=$'\t' read -r tool msg; do
+    [[ -n "${tool:-}" ]] || continue
+    printf '%-12s  %s\n' "$tool" "$msg"
+  done <"$file"
+}
+
+cmd_repair() {
+  if [[ "$(id -u)" -eq 0 ]]; then
+    exec "$OPS_ROOT/install" --repair
+  fi
+  exec sudo -- bash "$OPS_ROOT/install" --repair
+}
+
 cmd_help() {
   cat <<'EOF'
 ops — interfaz de operaciones
@@ -166,6 +190,8 @@ ops — interfaz de operaciones
   ops tmux         sesión tmux OPS
   ops doctor       diagnóstico
   ops install      ./install
+  ops repair       reintenta lo que falta, buscando upstreams de nuevo
+  ops failures     lista los pendientes del último install
   ops rollback     ./rollback
   ops help
 
@@ -191,6 +217,8 @@ main() {
     tmux) cmd_tmux ;;
     doctor) cmd_doctor ;;
     install) "$OPS_ROOT/install" "$@" ;;
+    repair) cmd_repair ;;
+    failures) cmd_failures ;;
     rollback) "$OPS_ROOT/rollback" "$@" ;;
     help|-h|--help) cmd_help ;;
     *) cmd_help; exit 1 ;;
