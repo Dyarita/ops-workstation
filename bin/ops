@@ -33,6 +33,7 @@ menu_main() {
     "install — re-ejecutar installer" \
     "repair — reintentar lo que falló" \
     "failures — ver pendientes" \
+    "fleet — panel de VMs OpenClaw" \
     "rollback — restaurar snapshot" \
     "quit")"
   case "$choice" in
@@ -46,6 +47,7 @@ menu_main() {
     install*) "$OPS_ROOT/install" ;;
     repair*) cmd_repair ;;
     failures*) cmd_failures ;;
+    fleet*) cmd_fleet ;;
     rollback*) cmd_rollback ;;
     quit*|*) exit 0 ;;
   esac
@@ -170,6 +172,14 @@ cmd_failures() {
   done <"$file"
 }
 
+cmd_fleet() {
+  if ! have python3; then
+    echo "Falta python3. En esta máquina: sudo apt install python3  o  sudo pacman -S python"
+    exit 1
+  fi
+  OPS_WORKSTATION_ROOT="$OPS_ROOT" exec python3 "$OPS_ROOT/bin/fleet-gui.py" --open
+}
+
 cmd_repair() {
   if [[ "$(id -u)" -eq 0 ]]; then
     exec "$OPS_ROOT/install" --repair
@@ -192,6 +202,7 @@ ops — interfaz de operaciones
   ops install      ./install
   ops repair       reintenta lo que falta, buscando upstreams de nuevo
   ops failures     lista los pendientes del último install
+  ops fleet        panel para dirigir las VMs headless
   ops rollback     ./rollback
   ops help
 
@@ -219,6 +230,7 @@ main() {
     install) "$OPS_ROOT/install" "$@" ;;
     repair) cmd_repair ;;
     failures) cmd_failures ;;
+    fleet) cmd_fleet ;;
     rollback) "$OPS_ROOT/rollback" "$@" ;;
     help|-h|--help) cmd_help ;;
     *) cmd_help; exit 1 ;;

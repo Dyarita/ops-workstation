@@ -37,6 +37,28 @@ ops failures
 
 Otro usuario: `sudo OPS_USER=nombre ./install`.
 
+## OpenClaw y las VMs
+
+La app no se instala dentro de cada VM. Una VM headless solo corre el gateway y una tarea. El panel vive en la workstation y desde ahí se manda el trabajo.
+
+En la workstation (hay pantalla):
+
+```bash
+sudo ./install-openclaw --gui
+```
+
+Eso abre la app de OpenClaw y el panel en http://127.0.0.1:8765.
+
+En cada VM, un solo comando (también lo dispara el botón Instalar del panel):
+
+```bash
+sudo ./install-openclaw --headless --task web
+```
+
+Tareas: `web`, `markets`, `prices`, `social`. La de red social deja los posteos en una cola; no publica sola.
+
+El panel guarda las VMs en `~/.config/ops-workstation/fleet.tsv`. SSH tiene que entrar con llave, y el usuario de la VM necesita `sudo -n` para el botón Instalar.
+
 ## Rollback
 
 ```bash

@@ -1,0 +1,5 @@
+# name	ssh	task	local_port
+# web1	dtjr@192.168.122.10	web	19010
+# markets1	dtjr@192.168.122.11	markets	19011
+# prices1	dtjr@192.168.122.12	prices	19012
+# social1	dtjr@192.168.122.13	social	19013
