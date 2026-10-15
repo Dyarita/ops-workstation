@@ -1,0 +1,169 @@
+#!/usr/bin/env bash
+# Host-side libvirt shortcuts. OpenClaw is not involved.
+#   vmlist
+#   vmip Bry
+#   vmssh Bry
+set -euo pipefail
+
+FLEET_FILE="${OPS_FLEET_FILE:-${XDG_CONFIG_HOME:-$HOME/.config}/ops-workstation/fleet.tsv}"
+
+die() { printf 'vm: %s\n' "$*" >&2; exit 1; }
+
+need_virsh() {
+  command -v virsh >/dev/null 2>&1 || die "no está virsh en este host"
+}
+
+usage() {
+  cat <<'EOF'
+vm list                 vmlist
+vm ip [nombre]          vmip
+vm ssh [nombre] [-- …]  vmssh
+vm start [nombre]       vmup
+vm stop [nombre]        vmdown
+vm reboot [nombre]      vmreboot
+vm info [nombre]        vminfo
+
+Sin nombre, si hay una sola VM en ejecución, se usa esa.
+La IP sale de libvirt. Si la VM está en la flota, vmssh usa ese usuario@host.
+EOF
+}
+
+domain_names() {
+  virsh list --all --name | sed '/^$/d'
+}
+
+resolve_name() {
+  local want="${1:-}" name lower
+  if [[ -z "$want" ]]; then
+    local -a running=()
+    while IFS= read -r name; do
+      [[ "$(virsh domstate "$name" 2>/dev/null || true)" == "running" ]] && running+=("$name")
+    done < <(domain_names)
+    if [[ "${#running[@]}" -eq 1 ]]; then
+      printf '%s\n' "${running[0]}"
+      return 0
+    fi
+    die "pasá el nombre. En ejecución: ${running[*]:-ninguna}"
+  fi
+  local want_lc="${want,,}"
+  while IFS= read -r name; do
+    lower="${name,,}"
+    if [[ "$lower" == "$want_lc" ]]; then
+      printf '%s\n' "$name"
+      return 0
+    fi
+  done < <(domain_names)
+  die "no existe la VM '$want'"
+}
+
+ip_of() {
+  local name="$1" ip
+  ip="$(virsh domifaddr "$name" 2>/dev/null | awk '/ipv4/ { print $4; exit }' | cut -d/ -f1)"
+  if [[ -z "$ip" && -f "$FLEET_FILE" ]]; then
+    ip="$(awk -F '\t' -v n="$name" 'tolower($1)==tolower(n) { sub(/.*@/,"",$2); print $2; exit }' "$FLEET_FILE")"
+  fi
+  printf '%s\n' "$ip"
+}
+
+ssh_target() {
+  local name="$1" target ip
+  if [[ -f "$FLEET_FILE" ]]; then
+    target="$(awk -F '\t' -v n="$name" 'tolower($1)==tolower(n) { print $2; exit }' "$FLEET_FILE")"
+    if [[ -n "$target" ]]; then
+      printf '%s\n' "$target"
+      return 0
+    fi
+  fi
+  ip="$(ip_of "$name")"
+  [[ -n "$ip" ]] || die "$name no tiene IP (¿está apagada?)"
+  printf '%s@%s\n' "${VM_USER:-$USER}" "$ip"
+}
+
+cmd_list() {
+  need_virsh
+  printf '%-16s %-12s %s\n' "NAME" "STATE" "IP"
+  local name state ip
+  while IFS= read -r name; do
+    state="$(virsh domstate "$name" 2>/dev/null || echo unknown)"
+    ip="$(ip_of "$name")"
+    printf '%-16s %-12s %s\n' "$name" "$state" "${ip:--}"
+  done < <(domain_names)
+}
+
+cmd_ip() {
+  need_virsh
+  local name ip
+  name="$(resolve_name "${1:-}")"
+  ip="$(ip_of "$name")"
+  [[ -n "$ip" ]] || die "$name no tiene IP (¿está apagada?)"
+  printf '%s\n' "$ip"
+}
+
+cmd_ssh() {
+  need_virsh
+  local name target
+  name="$(resolve_name "${1:-}")"
+  [[ $# -gt 0 ]] && shift
+  target="$(ssh_target "$name")"
+  exec ssh -o BatchMode=yes "$target" "$@"
+}
+
+cmd_start() {
+  need_virsh
+  local name
+  name="$(resolve_name "${1:-}")"
+  virsh start "$name"
+}
+
+cmd_stop() {
+  need_virsh
+  local name
+  name="$(resolve_name "${1:-}")"
+  virsh shutdown "$name"
+}
+
+cmd_reboot() {
+  need_virsh
+  local name
+  name="$(resolve_name "${1:-}")"
+  virsh reboot "$name"
+}
+
+cmd_info() {
+  need_virsh
+  local name
+  name="$(resolve_name "${1:-}")"
+  virsh dominfo "$name"
+  printf 'IP: %s\n' "$(ip_of "$name")"
+}
+
+main() {
+  local sub
+  sub="$(basename "$0")"
+  case "$sub" in
+    vm)
+      sub="${1:-}"
+      [[ $# -gt 0 ]] && shift
+      ;;
+    vmlist) sub=list ;;
+    vmip) sub=ip ;;
+    vmssh) sub=ssh ;;
+    vmup|vmstart) sub=start ;;
+    vmdown|vmstop) sub=stop ;;
+    vmreboot) sub=reboot ;;
+    vminfo) sub=info ;;
+  esac
+  case "$sub" in
+    ""|-h|--help|help) usage ;;
+    list|ls) cmd_list "$@" ;;
+    ip) cmd_ip "$@" ;;
+    ssh) cmd_ssh "$@" ;;
+    start|up) cmd_start "$@" ;;
+    stop|down) cmd_stop "$@" ;;
+    reboot) cmd_reboot "$@" ;;
+    info) cmd_info "$@" ;;
+    *) die "comando desconocido: $sub" ;;
+  esac
+}
+
+main "$@"

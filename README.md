@@ -45,7 +45,12 @@ En el host:
 
 ```bash
 ops fleet
+vmlist
+vmip Bry
+vmssh Bry
 ```
+
+También `vmup`, `vmdown`, `vmreboot` y `vminfo`. Si hay una sola VM encendida, `vmssh` y `vmip` la eligen solas.
 
 Eso abre http://127.0.0.1:8765. Ahí agregás la VM, apretás Instalar una vez, y después escribís la instrucción y la enviás. El comando `openclaw agent` corre dentro de la VM.
 
